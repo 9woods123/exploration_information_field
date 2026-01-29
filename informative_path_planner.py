@@ -128,7 +128,35 @@ def map_generate():
     # -------------------------
     # EIF lookup table
     # -------------------------
-    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid, Yaw_grid)
+
+
+
+
+
+    Yaw_grid_2d = np.zeros((nx, ny))
+    for ix, x in enumerate(xs):
+        for iy, y in enumerate(ys):
+
+            t = np.array([x, y])
+
+            if not map2d.is_free(t):
+                Yaw_grid_2d[ix, iy] = np.nan
+                continue
+
+            # -------- 找附近 viewpoints --------
+            dists = np.linalg.norm(ts - t, axis=1)
+            k = 5
+            idx = np.argsort(dists)[:k]
+
+            w = np.exp(-dists[idx]**2 / (2 * KDE_BANDWIDTH**2))
+            yaws = Yaw_grid[idx]
+
+            Yaw_grid_2d[ix, iy] = circular_mean(yaws, w)
+
+
+
+
+    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid, Yaw_grid_2d)
 
     timer.lap("EIF table creation")
 
@@ -339,7 +367,7 @@ def main():
     traj0 = path_planner.init_polyline_traj(start, mid , goal)
 
 
-    
+
 
     traj_opt = traj_optimizer.optimize(
         traj0,
@@ -347,6 +375,7 @@ def main():
         verbose=True
     )
 
+    
     # ========= NEW =========
     plot_eif_and_sdf_with_traj(
         eif_table,
