@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
-
+from utils import *
 import time
 
 class Timer:
@@ -290,15 +290,36 @@ class GradientEstimator:
 # EIF Lookup Table (FAST QUERY)
 # ============================================================
 class EIFLookupTable:
-    def __init__(self, xs, ys, I, Gx, Gy):
+    def __init__(self, xs, ys, I, Gx, Gy, Yaw):
         self.xs = xs
         self.ys = ys
-        self.I = I
+        self.I  = I
         self.Gx = Gx
         self.Gy = Gy
+        self.Yaw = Yaw
+
         self.dx = xs[1] - xs[0]
         self.dy = ys[1] - ys[0]
 
+    # ---------------------------
+    # Nearest-cell yaw query
+    # ---------------------------
+    def query_yaw(self, x):
+        ix, iy = self._coord_to_index(x)
+        return self.Yaw[ix, iy]
+
+    def _coord_to_index(self, x):
+        ix = int(round((x[0] - self.xs[0]) / self.dx))
+        iy = int(round((x[1] - self.ys[0]) / self.dy))
+
+        ix = np.clip(ix, 0, len(self.xs) - 1)
+        iy = np.clip(iy, 0, len(self.ys) - 1)
+
+        return ix, iy
+
+    # ---------------------------
+    # Bilinear for scalar fields
+    # ---------------------------
     def _bilinear(self, grid, x, y):
         ix = (x - self.xs[0]) / self.dx
         iy = (y - self.ys[0]) / self.dy
@@ -323,13 +344,15 @@ class EIFLookupTable:
                 (1-tx)*ty*v01 +
                 tx*ty*v11)
 
-    def query_I(self, t):
-        return self._bilinear(self.I, t[0], t[1])
+    def query_I(self, x):
+        return self._bilinear(self.I, x[0], x[1])
 
-    def query_grad(self, t):
-        gx = self._bilinear(self.Gx, t[0], t[1])
-        gy = self._bilinear(self.Gy, t[0], t[1])
+    def query_grad(self, x):
+        gx = self._bilinear(self.Gx, x[0], x[1])
+        gy = self._bilinear(self.Gy, x[0], x[1])
         return np.array([gx, gy])
+
+
 
 
 # ============================================================
@@ -384,13 +407,20 @@ def main():
     # -------------------------
     # EIF evaluation (MOST IMPORTANT)
     # -------------------------
+
+
+    Yaw_grid= []
     Is = []
     for t in ts:
         pts, w = sampler.sample(t, N_INFO_PTS)
-        _, I = evaluator.optimal_yaw_fast(t, pts, w)
-        Is.append(I)
+        yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
+        Is.append(I_star)
+        Yaw_grid.append(yaw_star)
 
     Is = np.array(Is)
+    Yaw_grid= np.array(Yaw_grid)
+
+
     timer.lap("EIF evaluation @ viewpoints")
 
     # -------------------------
@@ -454,9 +484,29 @@ def main():
     # -------------------------
     # EIF lookup table
     # -------------------------
-    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid)
+    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid,Yaw_grid)
+
     timer.lap("EIF table creation")
 
+    Yaw_grid_2d = np.zeros((nx, ny))
+    for ix, x in enumerate(xs):
+        for iy, y in enumerate(ys):
+
+            t = np.array([x, y])
+
+            if not map2d.is_free(t):
+                Yaw_grid_2d[ix, iy] = np.nan
+                continue
+
+            # -------- 找附近 viewpoints --------
+            dists = np.linalg.norm(ts - t, axis=1)
+            k = 5
+            idx = np.argsort(dists)[:k]
+
+            w = np.exp(-dists[idx]**2 / (2 * KDE_BANDWIDTH**2))
+            yaws = Yaw_grid[idx]
+
+            Yaw_grid_2d[ix, iy] = circular_mean(yaws, w)
 
 
     # -------------------------
@@ -486,6 +536,8 @@ def main():
     # =====================================================
     X, Y = np.meshgrid(xs, ys, indexing='ij')
     unknown_xy = np.array([map2d.grid_to_world(idx) for idx in map2d.unknown])
+    Ux = np.cos(Yaw_grid_2d)
+    Uy = np.sin(Yaw_grid_2d)
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -494,11 +546,15 @@ def main():
     ax.scatter(unknown_xy[:,0], unknown_xy[:,1],
                s=5, c='lightgray', alpha=0.4)
     c1 = ax.contourf(X, Y, I_grid, 30, cmap='viridis')
-    ax.quiver(X, Y, Gx_grid, Gy_grid,
-              color='red', alpha=0.7, scale=300)
+
+
     ax.set_aspect('equal')
     ax.set_title("EIF Field + Gradient")
     fig.colorbar(c1, ax=ax, shrink=0.8)
+
+    # Yaw field
+    ax.quiver(X, Y, Ux, Uy,
+            color='red', alpha=0.8, scale=40, label='yaw')
 
     # -------- SDF --------
     ax = axes[1]

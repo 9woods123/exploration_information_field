@@ -4,7 +4,6 @@ from traj_generater import *
 
 
 def map_generate():
-
     timer = Timer()
 
     resolution = 0.2
@@ -13,8 +12,8 @@ def map_generate():
     # -------------------------
     # Hyper-parameters
     # -------------------------
-    N_INFO_PTS    = 50
-    N_VIEWPOINTS = 50
+    N_INFO_PTS    = 100
+    N_VIEWPOINTS = 100
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
     GRID_STEP     = 0.3
@@ -53,13 +52,19 @@ def map_generate():
     # -------------------------
     # EIF evaluation (MOST IMPORTANT)
     # -------------------------
+
+
+    Yaw_grid= []
     Is = []
     for t in ts:
         pts, w = sampler.sample(t, N_INFO_PTS)
-        _, I = evaluator.optimal_yaw_fast(t, pts, w)
-        Is.append(I)
+        yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
+        Is.append(I_star)
+        Yaw_grid.append(yaw_star)
 
     Is = np.array(Is)
+    Yaw_grid= np.array(Yaw_grid)
+
     timer.lap("EIF evaluation @ viewpoints")
 
     # -------------------------
@@ -116,32 +121,16 @@ def map_generate():
     sdf_field.build()
     sdf_timer.lap("SDF build")
 
+    sdf_t_test = np.array([4, 5])
+    print("sdf_field():",sdf_field.query(sdf_t_test))
+    print("sdf_field()grad:",sdf_field.grad(sdf_t_test))
 
     # -------------------------
     # EIF lookup table
     # -------------------------
-    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid)
+    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid, Yaw_grid)
+
     timer.lap("EIF table creation")
-
-
-
-    # -------------------------
-    # Validation query speed
-    # -------------------------
-    t_test = np.array([1.0, -1.0])
-
-    N_QUERY = 5
-    t0 = time.perf_counter()
-    for _ in range(N_QUERY):
-        eif_table.query_I(t_test)
-        eif_table.query_grad(t_test)
-    t1 = time.perf_counter()
-
-    total_ms = (t1 - t0) * 1000.0
-    per_query_us = (t1 - t0) / N_QUERY * 1e6
-
-    print(f"[QUERY] {N_QUERY} queries: {total_ms:.2f} ms "
-        f"({per_query_us:.2f} µs / query)")
 
 
 
@@ -188,6 +177,7 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
     )
     fig.colorbar(c1, ax=ax, shrink=0.8, label="EIF")
 
+    # ---- init trajectory ----
     ax.plot(
         traj0_pts[:, 0],
         traj0_pts[:, 1],
@@ -196,7 +186,18 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         linewidth=2,
         label='init traj'
     )
+    ax.scatter(
+        traj0_pts[:, 0],
+        traj0_pts[:, 1],
+        c='white',
+        s=25,
+        edgecolors='black',
+        linewidths=0.5,
+        zorder=4,
+        label='init waypoints'
+    )
 
+    # ---- optimized trajectory ----
     ax.plot(
         traj_opt_pts[:, 0],
         traj_opt_pts[:, 1],
@@ -204,25 +205,38 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         linewidth=2.5,
         label='optimized traj'
     )
+    ax.scatter(
+        traj_opt_pts[:, 0],
+        traj_opt_pts[:, 1],
+        c='red',
+        s=30,
+        edgecolors='black',
+        linewidths=0.5,
+        zorder=5,
+        label='optimized waypoints'
+    )
 
+    # start / goal
     ax.scatter(
         traj_opt_pts[0, 0],
         traj_opt_pts[0, 1],
         c='lime',
         s=80,
-        zorder=5
+        zorder=6,
+        label='start'
     )
     ax.scatter(
         traj_opt_pts[-1, 0],
         traj_opt_pts[-1, 1],
         c='red',
         s=80,
-        zorder=5
+        zorder=6,
+        label='goal'
     )
 
     ax.set_title("EIF Field + Trajectory")
     ax.set_aspect('equal')
-    # ax.legend()
+    ax.legend(loc='upper right', fontsize=9)
 
     # =====================================================
     # RIGHT: SDF FIELD
@@ -244,6 +258,7 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         linewidths=2
     )
 
+    # ---- init trajectory ----
     ax.plot(
         traj0_pts[:, 0],
         traj0_pts[:, 1],
@@ -252,7 +267,18 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         linewidth=2,
         label='init traj'
     )
+    ax.scatter(
+        traj0_pts[:, 0],
+        traj0_pts[:, 1],
+        c='white',
+        s=25,
+        edgecolors='black',
+        linewidths=0.5,
+        zorder=4,
+        label='init waypoints'
+    )
 
+    # ---- optimized trajectory ----
     ax.plot(
         traj_opt_pts[:, 0],
         traj_opt_pts[:, 1],
@@ -260,46 +286,60 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         linewidth=2.5,
         label='optimized traj'
     )
+    ax.scatter(
+        traj_opt_pts[:, 0],
+        traj_opt_pts[:, 1],
+        c='red',
+        s=30,
+        edgecolors='black',
+        linewidths=0.5,
+        zorder=5,
+        label='optimized waypoints'
+    )
 
     ax.scatter(
         traj_opt_pts[0, 0],
         traj_opt_pts[0, 1],
         c='lime',
         s=80,
-        zorder=5
+        zorder=6,
+        label='start'
     )
     ax.scatter(
         traj_opt_pts[-1, 0],
         traj_opt_pts[-1, 1],
         c='red',
         s=80,
-        zorder=5
+        zorder=6,
+        label='goal'
     )
 
     ax.set_title("SDF + Trajectory")
     ax.set_aspect('equal')
-    # ax.legend()
+    ax.legend(loc='upper right', fontsize=9)
 
     plt.tight_layout()
     plt.show()
 
 
 
+
 def main():
 
-    eif_table, sdf_field, map2d = map_generate()
+    eif_table, sdf_field, map2d= map_generate()
 
     path_planner = PathPlanner(n_waypoints=40)
     traj_optimizer = TrajOpti(eif_table, sdf_field)
 
-    start = np.array([-2, -6.0])
+    start = np.array([-4.5, -5.0])
     mid  = np.array([ 3.0,  -4.0])
-    goal  = np.array([ -4.0,  6.0])
-    
+    goal  = np.array([ -2.0,  6.0])
+
     # traj0 = path_planner.init_straight_traj(start, goal)
     traj0 = path_planner.init_polyline_traj(start, mid , goal)
 
 
+    
 
     traj_opt = traj_optimizer.optimize(
         traj0,
