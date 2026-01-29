@@ -53,9 +53,10 @@ class TrajOpti:
     def __init__(self,
                  eif_table,
                  sdf,
-                 lambda_col=1.0,
+                 lambda_info=0.25,
+                 lambda_col=0.5,
                  mu_smooth=1.0,
-                 step_size=0.1,
+                 step_size=0.05,
                  fix_start=True,
                  fix_goal=True):
         """
@@ -65,6 +66,7 @@ class TrajOpti:
         self.eif = eif_table
         self.sdf = sdf
 
+        self.lambda_info=lambda_info
         self.lambda_col = lambda_col
         self.mu_smooth  = mu_smooth
         self.step_size  = step_size
@@ -81,6 +83,9 @@ class TrajOpti:
     # Main optimization loop
     # --------------------------------------------------
     def optimize(self, traj, n_iter=50, verbose=True):
+
+        timer=Timer()
+
         traj = traj.copy()
 
         for it in range(n_iter):
@@ -91,12 +96,15 @@ class TrajOpti:
                 grad[0] = 0.0
             if self.fix_goal:
                 grad[-1] = 0.0
+            # print("grad[0]:",grad[0])
 
             traj.waypoints = traj.waypoints  - self.step_size * grad
 
-            if verbose and it % 10 == 0:
-                J = self.total_cost(traj)
-                print(f"[TrajOpt] iter {it:03d}, cost = {J:.3f}")
+            # if verbose and it % 10 == 0:
+            #     J = self.total_cost(traj)
+            #     print(f"[TrajOpt] iter {it:03d}, cost = {J:.3f}")
+
+        timer.lap("Traj optimize ")
 
         return traj
 
@@ -106,7 +114,7 @@ class TrajOpti:
     # --------------------------------------------------
     def total_cost(self, traj):
         return (
-            self.info_cost(traj)
+             self.lambda_info *self.info_cost(traj)
             + self.lambda_col * self.collision_cost(traj)
             + self.mu_smooth * self.smoothness_cost(traj)
         )
@@ -120,7 +128,7 @@ class TrajOpti:
     def collision_cost(self, traj, eps=0.3):
         cost = 0.0
         for x in traj.waypoints:
-            d = self.sdf.eval(x)
+            d = self.sdf.query(x)
             if d < eps:
                 cost += (eps - d)**2
         return cost * traj.dt
@@ -139,10 +147,11 @@ class TrajOpti:
         g_smo  = self.smoothness_grad(traj)
 
         return (
-            g_info
+            self.lambda_info *g_info
             + self.lambda_col * g_col
             + self.mu_smooth * g_smo
         )
+
 
     def info_grad(self, traj):
         """
@@ -150,16 +159,30 @@ class TrajOpti:
         """
         g = np.zeros_like(traj.waypoints)
         for i, x in enumerate(traj.waypoints):
-            g[i] = -self.eif.query_grad(x)
-        return g * traj.dt
+            g[i] = - self.eif.query_grad(x)
+        
+        return g 
 
-    def collision_grad(self, traj, eps=0.75):
+
+    def collision_grad(self, traj, eps=3.0):
+        """
+        Soft collision avoidance gradient:
+        Penalize sdf < eps
+        """
         g = np.zeros_like(traj.waypoints)
+
         for i, x in enumerate(traj.waypoints):
-            d = self.sdf.eval(x)
+            d = self.sdf.query(x)          # ← 正确
+
             if d < eps:
-                g[i] = -2 * (eps - d) * self.sdf.grad(x)
-        return g * traj.dt
+                g[i] = -2.0 * (eps - d) * self.sdf.grad(x)
+                # print("x:",x)
+                # print("d:", d)
+                # print("self.sdf.grad(x):", self.sdf.grad(x))
+                
+
+        return g 
+
 
 
     def smoothness_grad(self, traj):
@@ -170,6 +193,10 @@ class TrajOpti:
         N = traj.N
         g = np.zeros_like(x)
 
+
+        # print("x:", x)
+        # print("g:", g)
+
         for k in range(2, N - 2):
             g[k] = 2 * (
                 x[k-2]
@@ -178,6 +205,8 @@ class TrajOpti:
                 - 4*x[k+1]
                 + x[k+2]
             )
+        
+        # print("g:",g)
 
         return g
 
@@ -186,17 +215,12 @@ class TrajOpti:
 class PathPlanner:
     """
     Minimal path planner:
-    straight-line initialization + trajectory optimization
+    straight-line / polyline initialization + trajectory optimization
     """
 
     def __init__(self, 
-                 n_waypoints=40,
+                 n_waypoints=10,
                  dt=0.2):
-        """
-        traj_opti : TrajOpti instance
-        n_waypoints: number of trajectory points
-        dt         : time step
-        """
         self.n_waypoints = n_waypoints
         self.dt          = dt
 
@@ -204,9 +228,6 @@ class PathPlanner:
     # Straight-line initialization
     # -------------------------------------------------
     def init_straight_traj(self, start, goal):
-        """
-        start, goal: (2,)
-        """
         start = np.asarray(start)
         goal  = np.asarray(goal)
 
@@ -214,23 +235,34 @@ class PathPlanner:
         return Trajectory(waypoints, self.dt)
 
     # -------------------------------------------------
-    # Main planning interface
+    # Polyline initialization (3 points)
     # -------------------------------------------------
-    def plan(self, start, goal,
-             n_iter=60,
-             verbose=True):
+    def init_polyline_traj(self, start, mid, goal):
         """
-        Returns optimized trajectory
+        Initialize a 2-segment polyline trajectory:
+        start -> mid -> goal
         """
+        start = np.asarray(start)
+        mid   = np.asarray(mid)
+        goal  = np.asarray(goal)
 
-        # 1) initialize
-        traj0 = self.init_straight_traj(start, goal)
+        # --- segment lengths ---
+        L1 = np.linalg.norm(mid - start)
+        L2 = np.linalg.norm(goal - mid)
+        L  = L1 + L2 + 1e-8
 
-        # 2) optimize
-        traj_opt = self.traj_opti.optimize(
-            traj0,
-            n_iter=n_iter,
-            verbose=verbose
-        )
+        # --- allocate waypoints proportionally ---
+        n1 = max(2, int(self.n_waypoints * L1 / L))
+        n2 = self.n_waypoints - n1 + 1  # +1 because mid is shared
 
-        return traj_opt
+        # --- build segments ---
+        seg1 = np.linspace(start, mid, n1)
+        seg2 = np.linspace(mid, goal, n2)[1:]  # remove duplicated mid
+
+        waypoints = np.vstack([seg1, seg2])
+
+        # safety check
+        if len(waypoints) != self.n_waypoints:
+            raise ValueError("Waypoint count mismatch")
+
+        return Trajectory(waypoints, self.dt)

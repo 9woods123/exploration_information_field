@@ -161,8 +161,8 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         [map2d.grid_to_world(idx) for idx in map2d.unknown]
     )
 
-    traj0_pts = traj0.way_points
-    traj_opt_pts = traj_opt.way_points
+    traj0_pts = traj0.waypoints
+    traj_opt_pts = traj_opt.waypoints
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -222,7 +222,7 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
 
     ax.set_title("EIF Field + Trajectory")
     ax.set_aspect('equal')
-    ax.legend()
+    # ax.legend()
 
     # =====================================================
     # RIGHT: SDF FIELD
@@ -278,7 +278,7 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
 
     ax.set_title("SDF + Trajectory")
     ax.set_aspect('equal')
-    ax.legend()
+    # ax.legend()
 
     plt.tight_layout()
     plt.show()
@@ -289,18 +289,22 @@ def main():
 
     eif_table, sdf_field, map2d = map_generate()
 
-    path_planner = PathPlanner()
+    path_planner = PathPlanner(n_waypoints=40)
     traj_optimizer = TrajOpti(eif_table, sdf_field)
 
-    start = np.array([-4.0, -3.0])
-    goal  = np.array([ 4.0,  3.0])
+    start = np.array([-2, -6.0])
+    mid  = np.array([ 3.0,  -4.0])
+    goal  = np.array([ -4.0,  6.0])
+    
+    # traj0 = path_planner.init_straight_traj(start, goal)
+    traj0 = path_planner.init_polyline_traj(start, mid , goal)
 
-    traj0 = path_planner.init_straight_traj(start, goal)
+
 
     traj_opt = traj_optimizer.optimize(
         traj0,
-        n_iter=60,
-        verbose=False
+        n_iter=100,
+        verbose=True
     )
 
     # ========= NEW =========

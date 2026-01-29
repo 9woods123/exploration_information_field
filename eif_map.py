@@ -105,6 +105,8 @@ class SDF2D:
         gy = (self.query(t + ey) - self.query(t - ey)) / (2*eps)
 
         return np.array([gx, gy])
+    
+
 
 class Map2D:
     def __init__(self, resolution=0.2):
@@ -445,6 +447,9 @@ def main():
     sdf_field.build()
     sdf_timer.lap("SDF build")
 
+    sdf_t_test = np.array([4, 5])
+    print("sdf_field():",sdf_field.query(sdf_t_test))
+    print("sdf_field()grad:",sdf_field.grad(sdf_t_test))
 
     # -------------------------
     # EIF lookup table
