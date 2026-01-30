@@ -36,6 +36,9 @@ def map_generate():
         height=15.0,
         bound=MAP_BOUND
     )
+    map2d.add_random_rectangular_obstacles(
+        n_obs=4
+    )
 
     timer.lap("Map initialization")
 
@@ -262,6 +265,13 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         label='goal'
     )
 
+
+    draw_fov_wedges(
+        ax,
+        traj_opt_pts,
+        traj_opt.yaws
+    )
+
     ax.set_title("EIF Field + Trajectory")
     ax.set_aspect('equal')
     ax.legend(loc='upper right', fontsize=9)
@@ -342,6 +352,12 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
         label='goal'
     )
 
+    draw_fov_wedges(
+        ax,
+        traj_opt_pts,
+        traj_opt.yaws
+    )
+
     ax.set_title("SDF + Trajectory")
     ax.set_aspect('equal')
     ax.legend(loc='upper right', fontsize=9)
@@ -361,7 +377,7 @@ def main():
 
     start = np.array([-4.5, -5.0])
     mid  = np.array([ 3.0,  -4.0])
-    goal  = np.array([ -2.0,  6.0])
+    goal  = np.array([ -4.0,  5.0])
 
     # traj0 = path_planner.init_straight_traj(start, goal)
     traj0 = path_planner.init_polyline_traj(start, mid , goal)

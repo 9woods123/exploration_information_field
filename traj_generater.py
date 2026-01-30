@@ -41,10 +41,10 @@ class TrajOpti:
     def __init__(self,
                  eif_table,
                  sdf,
-                 lambda_info=0.2,
-                 lambda_col=0.5,
-                 mu_smooth=1.0,
-                 step_size=0.1,
+                 lambda_info=0.25,
+                 lambda_col=0.25,
+                 mu_smooth=0.75,
+                 step_size=0.05,
                  fix_start=True,
                  fix_goal=True):
         """
@@ -166,10 +166,11 @@ class TrajOpti:
         for i, x in enumerate(traj.waypoints):
             g[i] = - self.eif.query_grad(x)
         
+        print(g)
         return g 
 
 
-    def collision_grad(self, traj, eps=3.0):
+    def collision_grad(self, traj, eps=1.5):
         """
         Soft collision avoidance gradient:
         Penalize sdf < eps

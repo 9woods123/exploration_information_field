@@ -182,6 +182,30 @@ class Map2D:
     def entropy_at(self, p):
         return self.entropy(self.grid[self.world_to_grid(p)])
 
+    def add_random_rectangular_obstacles(
+        self,
+        n_obs=4,
+        w_range=(0.5, 4),
+        h_range=(0.5, 4),
+        seed=0
+    ):
+        if seed is not None:
+            np.random.seed(seed)
+
+        known_world = np.array(
+            [self.grid_to_world(idx) for idx in self.known]
+        )
+
+        for _ in range(n_obs):
+            c = known_world[np.random.randint(len(known_world))]
+            w = np.random.uniform(*w_range)
+            h = np.random.uniform(*h_range)
+
+            for idx in list(self.known):
+                p = self.grid_to_world(idx)
+                if abs(p[0] - c[0]) <= w/2 and abs(p[1] - c[1]) <= h/2:
+                    self.grid[idx] = 1.0
+
 
 # ============================================================
 # Sensor Model
@@ -347,13 +371,30 @@ class EIFLookupTable:
     def query_I(self, x):
         return self._bilinear(self.I, x[0], x[1])
 
-    def query_grad(self, x):
+    def query_grad_raw(self, x):
         gx = self._bilinear(self.Gx, x[0], x[1])
         gy = self._bilinear(self.Gy, x[0], x[1])
         return np.array([gx, gy])
 
 
+    def query_grad(
+        self,
+        x,
+        g_max=1.0,
+        normalize=True
+    ):
+        g = self.query_grad_raw(x)
 
+        # --- clip ---
+        n = np.linalg.norm(g)
+        if n > g_max:
+            g = g / (n + 1e-6) * g_max
+
+        # --- direction only ---
+        if normalize:
+            g = g / (np.linalg.norm(g) + 1e-6)
+
+        return g
 
 # ============================================================
 # MAIN
@@ -392,6 +433,9 @@ def main():
         bound=MAP_BOUND
     )
 
+    map2d.add_random_rectangular_obstacles(
+        n_obs=4
+    )
     timer.lap("Map initialization")
 
     sampler   = InfoSampler(map2d, sensor, H_thresh)
@@ -564,6 +608,28 @@ def main():
     ax.set_aspect('equal')
     ax.set_title("Signed Distance Field (Obstacle < 0)")
     fig.colorbar(c2, ax=ax, shrink=0.8)
+
+
+
+
+
+
+
+    obs_xy = []
+    for idx, p in map2d.grid.items():
+        if p > 0.9:
+            obs_xy.append(map2d.grid_to_world(idx))
+
+    obs_xy = np.array(obs_xy)
+
+    plt.scatter(
+        obs_xy[:,0], obs_xy[:,1],
+        c='black', s=20, label='obstacles'
+    )
+
+
+
+
 
     plt.tight_layout()
     plt.show()
