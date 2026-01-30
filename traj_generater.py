@@ -41,10 +41,10 @@ class TrajOpti:
     def __init__(self,
                  eif_table,
                  sdf,
-                 lambda_info=0.25,
-                 lambda_col=0.25,
-                 mu_smooth=0.75,
-                 step_size=0.05,
+                 lambda_info=0.0,
+                 lambda_col=0.5,
+                 mu_smooth=1,
+                 step_size=0.1,
                  fix_start=True,
                  fix_goal=True):
         """
@@ -68,45 +68,130 @@ class TrajOpti:
     def set_sd_table(self, sdf):
         self.sdf=sdf
 
-    # --------------------------------------------------
-    # Main optimization loop
-    # --------------------------------------------------
+    # # --------------------------------------------------
+    # # Main optimization loop
+    # # --------------------------------------------------
+    # def optimize(self, traj, n_iter=50, verbose=True):
+
+    #     timer=Timer()
+
+    #     traj = traj.copy()
+
+    #     for it in range(n_iter):
+
+    #         grad = self.total_gradient(traj)
+
+    #         # ---- enforce boundary by zeroing gradient ----
+    #         if self.fix_start:
+    #             grad[0] = 0.0
+    #         if self.fix_goal:
+    #             grad[-1] = 0.0
+    #         # print("grad[0]:",grad[0])
+
+    #         traj.waypoints = traj.waypoints  - self.step_size * grad
+
+    #         # if verbose and it % 10 == 0:
+    #         #     J = self.total_cost(traj)
+    #         #     print(f"[TrajOpt] iter {it:03d}, cost = {J:.3f}")
+
+    #     self.define_the_yaw(traj)
+
+    #     timer.lap("Traj optimize ")
+
+
+    #     return traj
+
     def optimize(self, traj, n_iter=50, verbose=True):
 
-        timer=Timer()
+        timer = Timer()
 
-        traj = traj.copy()
+        opt_traj = traj.copy()
+        N = len(opt_traj.waypoints)
 
         for it in range(n_iter):
-            grad = self.total_gradient(traj)
 
-            # ---- enforce boundary by zeroing gradient ----
-            if self.fix_start:
-                grad[0] = 0.0
-            if self.fix_goal:
-                grad[-1] = 0.0
-            # print("grad[0]:",grad[0])
+            for i in range(2, N - 2):
 
-            traj.waypoints = traj.waypoints  - self.step_size * grad
+                # --- use UPDATED trajectory ---
+                xim2 = opt_traj.waypoints[i - 2]
+                xim1 = opt_traj.waypoints[i - 1]
+                xi   = opt_traj.waypoints[i]
+                xip1 = opt_traj.waypoints[i + 1]
+                xip2 = opt_traj.waypoints[i + 2]
 
-            if verbose and it % 10 == 0:
-                J = self.total_cost(traj)
-                print(f"[TrajOpt] iter {it:03d}, cost = {J:.3f}")
+                smooth_grad, smooth_cost = self.smoothness_term(
+                    xim2, xim1, xi, xip1, xip2
+                )
 
-        self.define_the_yaw(traj)
+                collision_grad, collision_cost = self.obstacle_term(xi)
 
-        timer.lap("Traj optimize ")
+                info_grad, info_cost=self.info_term(xi)
+
+                correction = (
+                      self.mu_smooth * smooth_grad
+                    + self.lambda_col * collision_grad
+                    + self.lambda_info * info_grad
+                )
+
+                opt_xi= xi - self.step_size * correction
+
+                # --- update IN PLACE ---
+                opt_traj.waypoints[i] = opt_xi
+
+                
+            # if verbose and it % 10 == 0:
+            #     print(f"[TrajOpt] iter {it:03d}")
+
+        self.define_the_yaw(opt_traj)
+        timer.lap("Traj optimize")
+
+        return opt_traj
 
 
-        return traj
 
-    def define_the_yaw(self, traj_opt):
 
-        wps = traj_opt.waypoints        # (N, 2)
-        traj_opt.yaws = np.array([
-            self.eif.query_yaw(p)
-            for p in wps
-        ])
+
+    def define_the_yaw(self, traj_opt, eps=1):
+        """
+        Define yaw safely:
+        1) use EIF yaw if information exists
+        2) otherwise follow motion direction
+        3) fallback to previous yaw
+        """
+
+        wps = traj_opt.waypoints      # (N, 2)
+        N = len(wps)
+
+        yaws = np.zeros(N)
+
+        prev_yaw = 0.0
+
+        for i in range(N):
+
+            p = wps[i]
+
+            # ---------- 1. EIF yaw ----------
+            I = self.eif.query_I(p)
+            yaw_eif=self.eif.query_yaw(p)
+
+
+            if I > eps:
+                yaw = yaw_eif
+
+            else:
+                # ---------- 2. motion direction ----------
+                if i < N - 1:
+                    v = wps[i + 1] - wps[i]
+                else:
+                    v = wps[i] - wps[i - 1]
+
+                yaw = np.arctan2(v[1], v[0])
+
+
+            yaws[i] = yaw
+
+        traj_opt.yaws = yaws
+
 
     # --------------------------------------------------
     # Cost
@@ -125,7 +210,7 @@ class TrajOpti:
         cost = 0.0
         for x in traj.waypoints:
             cost -= self.eif.query_I(x)
-        return cost * traj.dt
+        return cost 
 
     def collision_cost(self, traj, eps=0.3):
         cost = 0.0
@@ -133,7 +218,7 @@ class TrajOpti:
             d = self.sdf.query(x)
             if d < eps:
                 cost += (eps - d)**2
-        return cost * traj.dt
+        return cost
 
     def smoothness_cost(self, traj):
         x = traj.waypoints
@@ -166,7 +251,6 @@ class TrajOpti:
         for i, x in enumerate(traj.waypoints):
             g[i] = - self.eif.query_grad(x)
         
-        print(g)
         return g 
 
 
@@ -215,7 +299,52 @@ class TrajOpti:
         # print("g:",g)
 
         return g
+        
+    def smoothness_term(self, xim2, xim1, xi, xip1, xip2):
+        """
+        5-point smoothness term
+        """
 
+        grad = 2.0 * (
+            xim2
+            - 4.0 * xim1
+            + 6.0 * xi
+            - 4.0 * xip1
+            + xip2
+        )
+
+        # cost（可选，仅用于调试 / 监控）
+        acc = xim1 - 2.0 * xi + xip1
+        cost = np.dot(acc, acc)
+
+        return grad, cost
+
+
+    def obstacle_term(self, xi, eps=2.5):
+        """
+        Soft obstacle avoidance (point-wise)
+        """
+
+        grad = np.zeros_like(xi)
+        cost = 0.0
+
+        d = self.sdf.query(xi)
+
+        if d < eps:
+            grad = -2.0 * (eps - d) * self.sdf.grad(xi)
+            cost = (eps - d)**2
+
+        return grad, cost
+                    
+    def info_term(self, xi):
+        """
+        ∂ / ∂x [ -I(x) ]
+        """
+
+        g = - self.eif.query_grad(xi)
+        cost = - self.eif.query_I(xi)
+
+        return g 
 
 
 class PathPlanner:

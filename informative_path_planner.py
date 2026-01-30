@@ -372,12 +372,12 @@ def main():
 
     eif_table, sdf_field, map2d= map_generate()
 
-    path_planner = PathPlanner(n_waypoints=40)
+    path_planner = PathPlanner(n_waypoints=30)
     traj_optimizer = TrajOpti(eif_table, sdf_field)
 
     start = np.array([-4.5, -5.0])
-    mid  = np.array([ 3.0,  -4.0])
-    goal  = np.array([ -4.0,  5.0])
+    mid  = np.array([ 5.2,  1.0])
+    goal  = np.array([ -4.0,  6.0])
 
     # traj0 = path_planner.init_straight_traj(start, goal)
     traj0 = path_planner.init_polyline_traj(start, mid , goal)
@@ -387,7 +387,7 @@ def main():
 
     traj_opt = traj_optimizer.optimize(
         traj0,
-        n_iter=100,
+        n_iter=50,
         verbose=True
     )
 
