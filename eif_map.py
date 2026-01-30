@@ -187,8 +187,11 @@ class Map2D:
         n_obs=4,
         w_range=(0.5, 4),
         h_range=(0.5, 4),
-        seed=0
+        seed=4212221
     ):
+        
+        ## seed=0
+
         if seed is not None:
             np.random.seed(seed)
 

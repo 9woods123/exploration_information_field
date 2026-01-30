@@ -37,7 +37,7 @@ def map_generate():
         bound=MAP_BOUND
     )
     map2d.add_random_rectangular_obstacles(
-        n_obs=4
+        n_obs=5
     )
 
     timer.lap("Map initialization")
@@ -169,216 +169,27 @@ def map_generate():
 
 
 
-def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
-    xs = eif_table.xs
-    ys = eif_table.ys
-    I_grid = eif_table.I
-    SDF = sdf_field.sdf
-
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-
-    unknown_xy = np.array(
-        [map2d.grid_to_world(idx) for idx in map2d.unknown]
-    )
-
-    traj0_pts = traj0.waypoints
-    traj_opt_pts = traj_opt.waypoints
-
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    # =====================================================
-    # LEFT: EIF FIELD
-    # =====================================================
-    ax = axes[0]
-
-    if len(unknown_xy) > 0:
-        ax.scatter(
-            unknown_xy[:, 0],
-            unknown_xy[:, 1],
-            s=5,
-            c='lightgray',
-            alpha=0.6,
-            label='unknown'
-        )
-
-    c1 = ax.contourf(
-        X, Y, I_grid,
-        levels=30,
-        cmap='viridis'
-    )
-    fig.colorbar(c1, ax=ax, shrink=0.8, label="EIF")
-
-    # ---- init trajectory ----
-    ax.plot(
-        traj0_pts[:, 0],
-        traj0_pts[:, 1],
-        '--',
-        color='white',
-        linewidth=2,
-        label='init traj'
-    )
-    ax.scatter(
-        traj0_pts[:, 0],
-        traj0_pts[:, 1],
-        c='white',
-        s=25,
-        edgecolors='black',
-        linewidths=0.5,
-        zorder=4,
-        label='init waypoints'
-    )
-
-    # ---- optimized trajectory ----
-    ax.plot(
-        traj_opt_pts[:, 0],
-        traj_opt_pts[:, 1],
-        '-r',
-        linewidth=2.5,
-        label='optimized traj'
-    )
-    ax.scatter(
-        traj_opt_pts[:, 0],
-        traj_opt_pts[:, 1],
-        c='red',
-        s=30,
-        edgecolors='black',
-        linewidths=0.5,
-        zorder=5,
-        label='optimized waypoints'
-    )
-
-    # start / goal
-    ax.scatter(
-        traj_opt_pts[0, 0],
-        traj_opt_pts[0, 1],
-        c='lime',
-        s=80,
-        zorder=6,
-        label='start'
-    )
-    ax.scatter(
-        traj_opt_pts[-1, 0],
-        traj_opt_pts[-1, 1],
-        c='red',
-        s=80,
-        zorder=6,
-        label='goal'
-    )
-
-
-    draw_fov_wedges(
-        ax,
-        traj_opt_pts,
-        traj_opt.yaws
-    )
-
-    ax.set_title("EIF Field + Trajectory")
-    ax.set_aspect('equal')
-    ax.legend(loc='upper right', fontsize=9)
-
-    # =====================================================
-    # RIGHT: SDF FIELD
-    # =====================================================
-    ax = axes[1]
-
-    c2 = ax.contourf(
-        X, Y, SDF,
-        levels=40,
-        cmap='coolwarm'
-    )
-    fig.colorbar(c2, ax=ax, shrink=0.8, label="SDF")
-
-    # zero level set = obstacle boundary
-    ax.contour(
-        X, Y, SDF,
-        levels=[0.0],
-        colors='black',
-        linewidths=2
-    )
-
-    # ---- init trajectory ----
-    ax.plot(
-        traj0_pts[:, 0],
-        traj0_pts[:, 1],
-        '--',
-        color='white',
-        linewidth=2,
-        label='init traj'
-    )
-    ax.scatter(
-        traj0_pts[:, 0],
-        traj0_pts[:, 1],
-        c='white',
-        s=25,
-        edgecolors='black',
-        linewidths=0.5,
-        zorder=4,
-        label='init waypoints'
-    )
-
-    # ---- optimized trajectory ----
-    ax.plot(
-        traj_opt_pts[:, 0],
-        traj_opt_pts[:, 1],
-        '-r',
-        linewidth=2.5,
-        label='optimized traj'
-    )
-    ax.scatter(
-        traj_opt_pts[:, 0],
-        traj_opt_pts[:, 1],
-        c='red',
-        s=30,
-        edgecolors='black',
-        linewidths=0.5,
-        zorder=5,
-        label='optimized waypoints'
-    )
-
-    ax.scatter(
-        traj_opt_pts[0, 0],
-        traj_opt_pts[0, 1],
-        c='lime',
-        s=80,
-        zorder=6,
-        label='start'
-    )
-    ax.scatter(
-        traj_opt_pts[-1, 0],
-        traj_opt_pts[-1, 1],
-        c='red',
-        s=80,
-        zorder=6,
-        label='goal'
-    )
-
-    draw_fov_wedges(
-        ax,
-        traj_opt_pts,
-        traj_opt.yaws
-    )
-
-    ax.set_title("SDF + Trajectory")
-    ax.set_aspect('equal')
-    ax.legend(loc='upper right', fontsize=9)
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-
 def main():
 
     eif_table, sdf_field, map2d= map_generate()
 
     path_planner = PathPlanner(n_waypoints=30)
-    traj_optimizer = TrajOpti(eif_table, sdf_field)
 
-    start = np.array([-4.5, -5.0])
-    mid  = np.array([ 5.2,  1.0])
-    goal  = np.array([ -4.0,  6.0])
 
+    lambda_info=0.2
+    lambda_col=0.5
+    mu_smooth=1
+
+    traj_optimizer = TrajOpti(eif_table, sdf_field,lambda_info,lambda_col,mu_smooth)
+    traj_optimizer_sdfonly = TrajOpti(eif_table, sdf_field,0,lambda_col,mu_smooth)
+
+
+    # start = np.array([-4.5, -5.0])
+    # mid  = np.array([ 5.2,  1.0])
+    # goal  = np.array([ -4.0,  6.0])
+    start = np.array([-3, -6.5])
+    mid  = np.array([ 3,  -0.5])
+    goal  = np.array([ -3.0,  6.0])
     # traj0 = path_planner.init_straight_traj(start, goal)
     traj0 = path_planner.init_polyline_traj(start, mid , goal)
 
@@ -391,14 +202,21 @@ def main():
         verbose=True
     )
 
+
+    traj_sdfonly_opt = traj_optimizer_sdfonly.optimize(
+        traj0,
+        n_iter=50,
+        verbose=True
+    )
+
     
-    # ========= NEW =========
-    plot_eif_and_sdf_with_traj(
+    plot_traj_and_fieldmap(
         eif_table,
         sdf_field,
         map2d,
         traj0,
-        traj_opt
+        traj_opt,
+        traj_sdfonly_opt
     )
 
 

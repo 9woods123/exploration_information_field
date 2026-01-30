@@ -41,7 +41,7 @@ class TrajOpti:
     def __init__(self,
                  eif_table,
                  sdf,
-                 lambda_info=0.0,
+                 lambda_info=0.2,
                  lambda_col=0.5,
                  mu_smooth=1,
                  step_size=0.1,
@@ -101,6 +101,11 @@ class TrajOpti:
 
     #     return traj
 
+    # I found that if I iterate the traj to ajdust the waypoints one by one, the optimzation is stable, 
+    # but when I optimze the traj.waypoints as a big martix,
+    #  the optimaztion is sensitive to the bigger step size
+    # TODO : ask for some experts for help
+    
     def optimize(self, traj, n_iter=50, verbose=True):
 
         timer = Timer()
