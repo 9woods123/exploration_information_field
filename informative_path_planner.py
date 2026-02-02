@@ -13,11 +13,12 @@ def map_generate():
     # Hyper-parameters
     # -------------------------
     N_INFO_PTS    = 100
-    N_VIEWPOINTS = 100
+    N_VIEWPOINTS = 50
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
     GRID_STEP     = 0.3
     MAP_BOUND=10
+    N_SENSOR_RAYS=12
     # -------------------------
     # Sensor & Map
     # -------------------------
@@ -37,7 +38,7 @@ def map_generate():
         bound=MAP_BOUND
     )
     map2d.add_random_rectangular_obstacles(
-        n_obs=5
+        n_obs=4
     )
 
     timer.lap("Map initialization")
@@ -60,7 +61,7 @@ def map_generate():
     Yaw_grid= []
     Is = []
     for t in ts:
-        pts, w = sampler.sample(t, N_INFO_PTS)
+        pts, w = sampler.visibility_sample(t, N_SENSOR_RAYS)
         yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
         Is.append(I_star)
         Yaw_grid.append(yaw_star)

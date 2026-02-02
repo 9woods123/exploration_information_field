@@ -247,6 +247,18 @@ def plot_traj_and_fieldmap(
         fontsize=6,
         framealpha=0.85
     )
+    
+    obs_xy = []
+    for idx, p in map2d.grid.items():
+        if p > 0.9:
+            obs_xy.append(map2d.grid_to_world(idx))
+
+    obs_xy = np.array(obs_xy)
+
+    plt.scatter(
+        obs_xy[:,0], obs_xy[:,1],
+        c='black', s=20, label='obstacles'
+    )
 
     plt.tight_layout()
 

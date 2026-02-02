@@ -147,6 +147,12 @@ class Map2D:
         idx = self.world_to_grid(p)
         return self.grid[idx] < 0.1
     
+    def is_occupied(self, p):
+        idx = self.world_to_grid(p)
+        return self.grid[idx] ==1.0
+
+
+
     def init_rectangle_known(self, center, width, height, bound):
         """
         初始化一个轴对齐的长方形已知区域
@@ -185,9 +191,9 @@ class Map2D:
     def add_random_rectangular_obstacles(
         self,
         n_obs=4,
-        w_range=(0.5, 4),
-        h_range=(0.5, 4),
-        seed=4212221
+        w_range=(0.5, 2),
+        h_range=(0.5, 6),
+        seed=422121
     ):
         
         ## seed=0
@@ -252,6 +258,75 @@ class InfoSampler:
             pts.append(p)
             w.append(H)
         return np.array(pts), np.array(w)
+
+
+    # def visibility_sample(self, t, n):
+
+
+    #     pts, w = [], []
+
+    #     for _ in range(n):
+    #         # sample in polar coordinates (sensor range)
+    #         r = self.sensor.dmax * np.sqrt(np.random.rand())
+    #         th = 2 * np.pi * np.random.rand()
+    #         p = t + np.array([r*np.cos(th), r*np.sin(th)])
+
+
+    #         # ray casting: check visibility
+    #         if not self._is_visible(t, p):
+    #             continue
+
+    #         H = self.map.entropy_at(p)
+            
+    #         if H < self.H_thresh:
+    #             continue
+
+    #         pts.append(p)
+    #         w.append(H)
+
+
+    #     return np.array(pts), np.array(w)
+    # def _is_visible(self, p0, p1, step=0.1):
+    #     direction = p1 - p0
+    #     dist = np.linalg.norm(direction)
+    #     direction /= dist
+
+    #     s = 0.0
+    #     s+=step
+    #     while s < dist:
+    #         p = p0 + s * direction
+
+    #         if self.map.is_occupied(p):
+    #             return False
+
+    #         s += step
+        
+    #     return True
+
+    def visibility_sample(self, t, n_rays, step=0.25):
+        pts, w = [], []
+
+        for _ in range(n_rays):
+            th = 2 * np.pi * np.random.rand()
+            direction = np.array([np.cos(th), np.sin(th)])
+
+            s = step
+            while s < self.sensor.dmax:
+                p = t + s * direction
+
+                if self.map.is_occupied(p):
+                    break  # 被遮挡，射线结束
+
+                H = self.map.entropy_at(p)
+                if H >= self.H_thresh:
+                    pts.append(p)
+                    w.append(H)
+                    break  # unknown 是传感器终止点
+
+                s += step
+
+        return np.array(pts), np.array(w)
+
 
 
 # ============================================================
@@ -412,6 +487,7 @@ def main():
     # Hyper-parameters
     # -------------------------
     N_INFO_PTS    = 100
+    N_SENSOR_RAYS=10
     N_VIEWPOINTS = 100
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
@@ -437,7 +513,7 @@ def main():
     )
 
     map2d.add_random_rectangular_obstacles(
-        n_obs=4
+        n_obs=7
     )
     timer.lap("Map initialization")
 
@@ -459,7 +535,10 @@ def main():
     Yaw_grid= []
     Is = []
     for t in ts:
-        pts, w = sampler.sample(t, N_INFO_PTS)
+        # pts, w = sampler.visibility_sample(t, N_INFO_PTS)
+        pts, w = sampler.visibility_sample(t, N_SENSOR_RAYS)
+
+
         yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
         Is.append(I_star)
         Yaw_grid.append(yaw_star)
