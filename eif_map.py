@@ -191,9 +191,9 @@ class Map2D:
     def add_random_rectangular_obstacles(
         self,
         n_obs=4,
-        w_range=(0.5, 2),
+        w_range=(0.5, 4),
         h_range=(0.5, 6),
-        seed=422121
+        seed=22
     ):
         
         ## seed=0
@@ -214,6 +214,164 @@ class Map2D:
                 p = self.grid_to_world(idx)
                 if abs(p[0] - c[0]) <= w/2 and abs(p[1] - c[1]) <= h/2:
                     self.grid[idx] = 1.0
+    
+    def init_T_corridor(
+        self,
+        center=(0.0, 0.0),
+        w_vert=2.0,     # 竖直走廊宽度
+        h_vert=10.0,    # 竖直走廊长度
+        w_horiz=8.0,    # 水平走廊长度
+        h_horiz=2.0,    # 水平走廊宽度
+        wall_thickness=0.6,  # 走廊两侧墙体厚度
+        bound=15.0      # 地图半尺寸（米）
+    ):
+        """
+        初始化一个 T 型走廊环境：
+        - 走廊内部：已知自由 (0.0)
+        - 走廊墙体：已知障碍 (1.0)
+        - 外部区域：未知 (0.5)
+        """
+
+        cx, cy = center
+        bound_cells = int(np.ceil(bound / self.resolution))
+
+        self.known.clear()
+        self.unknown.clear()
+
+        def in_vertical_corridor(p):
+            return (
+                abs(p[0] - cx) <= w_vert * 0.5 and
+                abs(p[1] - cy) <= h_vert * 0.5
+            )
+
+        def in_horizontal_corridor(p):
+            return (
+                abs(p[0] - cx) <= w_horiz * 0.5 and
+                abs(p[1] - (cy + h_vert * 0.5 - h_horiz * 0.5)) <= h_horiz * 0.5
+            )
+
+        def in_corridor(p):
+            return in_vertical_corridor(p) or in_horizontal_corridor(p)
+
+        def in_wall(p):
+            # 仅竖直走廊两侧生成墙
+            in_vert_wall = (
+                abs(p[0] - cx) <= w_vert * 0.5 + wall_thickness and
+                abs(p[1] - cy) <= h_vert * 0.5 and   # 注意这里没有+wall_thickness
+                not in_vertical_corridor(p)
+            )
+            return in_vert_wall
+
+        for ix in range(-bound_cells, bound_cells):
+            for iy in range(-bound_cells, bound_cells):
+
+                idx = (ix, iy)
+                p = self.grid_to_world(idx)
+
+                if in_corridor(p):
+                    self.grid[idx] = 0.0
+                    self.known.append(idx)
+
+                elif in_wall(p):
+                    self.grid[idx] = 1.0
+                    self.known.append(idx)
+
+                else:
+                    self.grid[idx] = 0.5
+                    self.unknown.append(idx)
+
+    def init_dense_maze(self, K=3, cell_size=3.0, wall_thickness=0.5, seed=42):
+        """
+        在 Map2D 中生成稠密迷宫（Kruskal生成完美迷宫）
+        - 自动填充 self.grid、self.known、self.unknown
+        """
+        np.random.seed(seed)
+        M = 2*K + 1
+        maze = np.ones((M, M), dtype=int)
+        for i in range(K):
+            for j in range(K):
+                maze[2*i+1, 2*j+1] = 0  # 通道中心
+
+        # 并查集
+        ftr = np.arange(K*K)
+        def findftr(x):
+            if ftr[x] != x:
+                ftr[x] = findftr(ftr[x])
+            return ftr[x]
+
+        # 边列表
+        edges = []
+        for i in range(K):
+            for j in range(K):
+                if j < K-1: edges.append((i,j,0))  # 右边
+                if i < K-1: edges.append((i,j,1))  # 下边
+        np.random.shuffle(edges)
+
+        for i,j,flag in edges:
+            xy = i*K + j
+            nxy = xy + (1 if flag==0 else K)
+            f1,f2 = findftr(xy), findftr(nxy)
+            if f1 != f2:
+                ftr[f1] = f2
+                maze[2*i+1+flag, 2*j+2-flag] = 0
+
+        # ----------------------
+        # 填充 Map2D 网格
+        # ----------------------
+        self.known.clear()
+        self.unknown.clear()
+
+        grid_cell_count = int(np.ceil(cell_size / self.resolution))
+        wall_cell_count = int(np.ceil(wall_thickness / self.resolution))
+        grid_size = M*grid_cell_count
+
+        offset = grid_size // 2
+        for ix in range(M):
+            for iy in range(M):
+                val = float(maze[ix, iy])
+                gx_start = ix*grid_cell_count - wall_cell_count//2
+                gx_end   = ix*grid_cell_count + grid_cell_count + wall_cell_count//2
+                gy_start = iy*grid_cell_count - wall_cell_count//2
+                gy_end   = iy*grid_cell_count + grid_cell_count + wall_cell_count//2
+                gx_start = max(0, gx_start)
+                gy_start = max(0, gy_start)
+                gx_end = min(grid_size, gx_end)
+                gy_end = min(grid_size, gy_end)
+
+                for gx in range(gx_start, gx_end):
+                    for gy in range(gy_start, gy_end):
+                        idx = (gx - offset, gy - offset)  # ← 平移到中心
+                        self.grid[idx] = val
+                        if val == 0.0 or val == 1.0:
+                            if idx not in self.known:
+                                self.known.append(idx)
+                        else:
+                            if idx not in self.unknown:
+                                self.unknown.append(idx)
+
+
+
+    def  add_continuous_unknown(self, centers=[(0.0,0.0)], radius=2.0):
+        """
+        在已知迷宫上添加连续未知区域（世界坐标输入）
+        centers: list of (x, y) in world coordinates [m]
+        radius: 控制未知区域半径 [m]
+        """
+        radius_cells = int(np.ceil(radius / self.resolution))  # 转换为栅格半径
+        new_unknown = []
+
+        for idx in self.known[:]:
+            x_idx, y_idx = idx
+            p = self.grid_to_world(idx)  # 当前格子世界坐标
+            for cx, cy in centers:
+                if np.hypot(p[0] - cx, p[1] - cy) <= radius:
+                    self.grid[idx] = 0.5
+                    if idx in self.known:
+                        self.known.remove(idx)
+                    new_unknown.append(idx)
+                    break  # 已经变为未知，不用检测其他中心
+
+        self.unknown.extend(new_unknown)
 
 
 # ============================================================
@@ -304,24 +462,31 @@ class InfoSampler:
     #     return True
 
     def visibility_sample(self, t, n_rays, step=0.25):
+        """
+        从位置 t 发射 n_rays 条均匀分布的射线，沿每条射线探测未知区域
+        t: np.array([x, y]) 当前位姿
+        n_rays: 射线数量
+        step: 射线步长
+        """
         pts, w = [], []
 
-        for _ in range(n_rays):
-            th = 2 * np.pi * np.random.rand()
-            direction = np.array([np.cos(th), np.sin(th)])
+        angles = np.linspace(0, 2*np.pi, n_rays, endpoint=False)  # 均匀角度
 
+        for th in angles:
+            direction = np.array([np.cos(th), np.sin(th)])
             s = step
+
             while s < self.sensor.dmax:
                 p = t + s * direction
 
                 if self.map.is_occupied(p):
-                    break  # 被遮挡，射线结束
+                    break  # 被遮挡，射线终止
 
                 H = self.map.entropy_at(p)
                 if H >= self.H_thresh:
                     pts.append(p)
                     w.append(H)
-                    break  # unknown 是传感器终止点
+                    break  # 遇到未知区域，射线终止
 
                 s += step
 
@@ -477,7 +642,9 @@ class EIFLookupTable:
 # ============================================================
 # MAIN
 # ============================================================
-def main():
+
+
+def map_generate():
     timer = Timer()
 
     resolution = 0.2
@@ -487,12 +654,12 @@ def main():
     # Hyper-parameters
     # -------------------------
     N_INFO_PTS    = 100
-    N_SENSOR_RAYS=10
     N_VIEWPOINTS = 100
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
     GRID_STEP     = 0.3
     MAP_BOUND=10
+    N_SENSOR_RAYS=12
     # -------------------------
     # Sensor & Map
     # -------------------------
@@ -503,18 +670,39 @@ def main():
         dmax=3.0
     )
 
+
     map2d = Map2D(resolution)
+
+    # map2d.init_T_corridor(
+    #     center=(0.0, 0.0),
+    #     w_vert=5.0,
+    #     h_vert=18.0,
+    #     w_horiz=14.0,
+    #     h_horiz=4.0,
+    #     wall_thickness=1,
+    #     bound=12.0
+    # )
+
 
     map2d.init_rectangle_known(
         center=(0.0, 0.0),
-        width=12.0,
+        width=10.0,
         height=15.0,
         bound=MAP_BOUND
     )
 
     map2d.add_random_rectangular_obstacles(
-        n_obs=7
+        n_obs=8,
+        w_range=(0.5, 4),
+        h_range=(0.5, 4),
+        seed=221221
     )
+
+
+    # map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
+    # map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
+
+
     timer.lap("Map initialization")
 
     sampler   = InfoSampler(map2d, sensor, H_thresh)
@@ -535,17 +723,13 @@ def main():
     Yaw_grid= []
     Is = []
     for t in ts:
-        # pts, w = sampler.visibility_sample(t, N_INFO_PTS)
         pts, w = sampler.visibility_sample(t, N_SENSOR_RAYS)
-
-
         yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
         Is.append(I_star)
         Yaw_grid.append(yaw_star)
 
     Is = np.array(Is)
     Yaw_grid= np.array(Yaw_grid)
-
 
     timer.lap("EIF evaluation @ viewpoints")
 
@@ -610,9 +794,10 @@ def main():
     # -------------------------
     # EIF lookup table
     # -------------------------
-    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid,Yaw_grid)
 
-    timer.lap("EIF table creation")
+
+
+
 
     Yaw_grid_2d = np.zeros((nx, ny))
     for ix, x in enumerate(xs):
@@ -635,86 +820,22 @@ def main():
             Yaw_grid_2d[ix, iy] = circular_mean(yaws, w)
 
 
-    # -------------------------
-    # Validation query speed
-    # -------------------------
-    t_test = np.array([1.0, -1.0])
-
-    N_QUERY = 5
-    t0 = time.perf_counter()
-    for _ in range(N_QUERY):
-        eif_table.query_I(t_test)
-        eif_table.query_grad(t_test)
-    t1 = time.perf_counter()
-
-    total_ms = (t1 - t0) * 1000.0
-    per_query_us = (t1 - t0) / N_QUERY * 1e6
-
-    print(f"[QUERY] {N_QUERY} queries: {total_ms:.2f} ms "
-        f"({per_query_us:.2f} µs / query)")
 
 
-    # -------------------------
-    # Visualization
-    # -------------------------
-    # =====================================================
-    # Visualization (EIF + SDF)
-    # =====================================================
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-    unknown_xy = np.array([map2d.grid_to_world(idx) for idx in map2d.unknown])
-    Ux = np.cos(Yaw_grid_2d)
-    Uy = np.sin(Yaw_grid_2d)
+    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid, Yaw_grid_2d)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    # -------- EIF --------
-    ax = axes[0]
-    ax.scatter(unknown_xy[:,0], unknown_xy[:,1],
-               s=5, c='lightgray', alpha=0.4)
-    c1 = ax.contourf(X, Y, I_grid, 30, cmap='viridis')
-
-
-    ax.set_aspect('equal')
-    ax.set_title("EIF Field + Gradient")
-    fig.colorbar(c1, ax=ax, shrink=0.8)
-
-    # Yaw field
-    ax.quiver(X, Y, Ux, Uy,
-            color='red', alpha=0.8, scale=40, label='yaw')
-
-    # -------- SDF --------
-    ax = axes[1]
-    c2 = ax.contourf(X, Y, sdf_field.sdf, 40, cmap='coolwarm')
-    ax.contour(X, Y, sdf_field.sdf, levels=[0.0],
-               colors='black', linewidths=2)
-    ax.set_aspect('equal')
-    ax.set_title("Signed Distance Field (Obstacle < 0)")
-    fig.colorbar(c2, ax=ax, shrink=0.8)
+    timer.lap("EIF table creation")
 
 
 
+    return eif_table, sdf_field, map2d
 
 
 
+def main():
 
-    obs_xy = []
-    for idx, p in map2d.grid.items():
-        if p > 0.9:
-            obs_xy.append(map2d.grid_to_world(idx))
-
-    obs_xy = np.array(obs_xy)
-
-    plt.scatter(
-        obs_xy[:,0], obs_xy[:,1],
-        c='black', s=20, label='obstacles'
-    )
-
-
-
-
-
-    plt.tight_layout()
-    plt.show()
+    eif_table, sdf_field, map2d= map_generate()
+    plot_eif_and_sdf(eif_table, sdf_field,eif_table.Yaw,map2d ,show_sdf=True)
 
 
 

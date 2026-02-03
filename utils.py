@@ -4,6 +4,7 @@ from matplotlib.patches import Wedge
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import os
+from matplotlib.lines import Line2D
 
 mpl.rcParams['pdf.fonttype'] = 42     # TrueType
 mpl.rcParams['ps.fonttype']  = 42
@@ -469,4 +470,155 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
     plt.tight_layout()
     plt.show()
 
+def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
+    save_dir="results",
+    fname="eif_sdf.pdf"):
+                     
+    """
+    Visualize EIF field with optimal yaw, and (optionally) SDF field.
 
+    Args:
+        eif_table: contains xs, ys, I
+        sdf_field: contains sdf
+        Yaw_grid_2d: optimal yaw angle at each grid (same shape as I)
+        map2d: occupancy map (with unknown + grid_to_world)
+        show_sdf: True -> EIF + SDF (2 subplots)
+                  False -> EIF only
+    """
+
+    xs = eif_table.xs
+    ys = eif_table.ys
+    I_grid = eif_table.I
+    SDF = sdf_field.sdf
+
+    X, Y = np.meshgrid(xs, ys, indexing='ij')
+
+    # yaw vector field
+    Ux = np.cos(Yaw_grid_2d)
+    Uy = np.sin(Yaw_grid_2d)
+
+    # unknown space
+    unknown_xy = np.array(
+        [map2d.grid_to_world(idx) for idx in map2d.unknown]
+    )
+
+    # -------------------------------------------------
+    # Create canvas
+    # -------------------------------------------------
+    if show_sdf:
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        ax_eif, ax_sdf = axes
+    else:
+        fig, ax_eif = plt.subplots(1, 1, figsize=(7, 6))
+        ax_sdf = None
+
+    # =====================================================
+    # EIF FIELD + YAW
+    # =====================================================
+    ax = ax_eif
+
+    # Unknown space
+    if len(unknown_xy) > 0:
+        ax.scatter(
+            unknown_xy[:, 0],
+            unknown_xy[:, 1],
+            s=5,
+            c='lightgray',
+            alpha=0.6,
+            label='unknown space'
+        )
+
+    # EIF contour
+    c1 = ax.contourf(
+        X, Y, I_grid,
+        levels=30,
+        cmap='viridis'
+    )
+    cbar1 = fig.colorbar(c1, ax=ax, shrink=0.8)
+    cbar1.set_label("Expected Information Gain (EIF)")
+
+    # Yaw field
+    # ---- yaw vector field ----
+    ax.quiver(
+        X, Y, Ux, Uy,
+        color='red',
+        alpha=0.4,
+        scale=60,
+        width=0.003
+    )
+
+    # ---- legend arrow ----
+
+    yaw_handle = Line2D(
+        [0], [0],
+        color='red',
+        marker=r'$\rightarrow$',
+        linestyle='None',
+        markersize=12,
+        label='optimal yaw'
+    )
+
+
+    ax.set_title("Expected Information Field (with Optimal Yaw)")
+    ax.set_aspect('equal')
+    ax.legend(loc='upper right', fontsize=8)
+
+    handles, labels = ax.get_legend_handles_labels()
+    handles.append(yaw_handle)
+
+    ax.legend(handles=handles, loc='upper right', fontsize=8)
+    # =====================================================
+    # SDF FIELD (Optional)
+    # =====================================================
+    if show_sdf:
+        ax = ax_sdf
+
+        c2 = ax.contourf(
+            X, Y, SDF,
+            levels=40,
+            cmap='coolwarm'
+        )
+        cbar2 = fig.colorbar(c2, ax=ax, shrink=0.8)
+        cbar2.set_label("Signed Distance Field (SDF)")
+
+        # zero level set = obstacle boundary
+        # ax.contour(
+        #     X, Y, SDF,
+        #     levels=[0.0],
+        #     colors='black',
+        #     linewidths=2,
+        #     label='obstacle boundary'
+        # )
+
+        # obstacles
+        obs_xy = []
+        for idx, p in map2d.grid.items():
+            if p > 0.9:
+                obs_xy.append(map2d.grid_to_world(idx))
+        obs_xy = np.array(obs_xy)
+
+        if len(obs_xy) > 0:
+            ax.scatter(
+                obs_xy[:, 0],
+                obs_xy[:, 1],
+                c='black',
+                s=20,
+                label='obstacles'
+            )
+
+        ax.set_title("Signed Distance Field (SDF)")
+        ax.set_aspect('equal')
+        ax.legend(loc='upper right', fontsize=8)
+
+
+    plt.tight_layout()
+
+    # -----------------------------
+    # save figure (IEEE-safe)
+    # -----------------------------
+
+    save_path = os.path.join(save_dir, fname)
+    plt.savefig(save_path, bbox_inches="tight")
+    print(f"[Figure saved] {save_path}")
+    
+    plt.show()
