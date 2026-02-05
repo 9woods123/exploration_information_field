@@ -86,7 +86,7 @@ def plot_traj_and_fieldmap(
     traj_opt,
     traj_sdf_only_opt,
     save_dir="results",
-    fname="traj_eif_sdf.pdf"
+    frame="traj_eif_sdf.pdf"
 ):
     xs = eif_table.xs
     ys = eif_table.ys
@@ -279,7 +279,7 @@ def plot_traj_and_fieldmap(
     # save figure (IEEE-safe)
     # -----------------------------
 
-    save_path = os.path.join(save_dir, fname)
+    save_path = os.path.join(save_dir, frame)
     plt.savefig(save_path, bbox_inches="tight")
     print(f"[Figure saved] {save_path}")
 
@@ -547,7 +547,7 @@ def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
         cmap='viridis'
     )
     cbar1 = fig.colorbar(c1, ax=ax, shrink=0.8)
-    cbar1.set_label("Expected Information Gain (EIF)")
+    cbar1.set_label("Expected Information Gain")
 
     # Yaw field
     # ---- yaw vector field ----
@@ -555,8 +555,8 @@ def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
         X, Y, Ux, Uy,
         color='red',
         alpha=0.4,
-        scale=60,
-        width=0.003
+        scale=25,
+        width=0.005
     )
 
     # ---- legend arrow ----
@@ -591,7 +591,7 @@ def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
             cmap='coolwarm'
         )
         cbar2 = fig.colorbar(c2, ax=ax, shrink=0.8)
-        cbar2.set_label("Signed Distance Field (SDF)")
+        cbar2.set_label("Signed Distance Field")
 
         # zero level set = obstacle boundary
         # ax.contour(
@@ -618,7 +618,7 @@ def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
                 label='obstacles'
             )
 
-        ax.set_title("Signed Distance Field (SDF)")
+        ax.set_title("Signed Distance Field")
         ax.set_aspect('equal')
         ax.legend(loc='upper right', fontsize=8)
 

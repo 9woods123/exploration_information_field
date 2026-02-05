@@ -647,7 +647,7 @@ def map_generate():
     N_VIEWPOINTS = 100
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
-    GRID_STEP     = 0.3
+    GRID_STEP     = 0.5
     MAP_BOUND=10
     N_SENSOR_RAYS=12
     # -------------------------
@@ -674,23 +674,23 @@ def map_generate():
     # )
 
 
-    map2d.init_rectangle_known(
-        center=(0.0, 0.0),
-        width=10.0,
-        height=15.0,
-        bound=MAP_BOUND
-    )
+    # map2d.init_rectangle_known(
+    #     center=(0.0, 0.0),
+    #     width=10.0,
+    #     height=15.0,
+    #     bound=MAP_BOUND
+    # )
 
-    map2d.add_random_rectangular_obstacles(
-        n_obs=8,
-        w_range=(0.5, 4),
-        h_range=(0.5, 4),
-        seed=221221
-    )
+    # map2d.add_random_rectangular_obstacles(
+    #     n_obs=8,
+    #     w_range=(0.5, 4),
+    #     h_range=(0.5, 4),
+    #     seed=221221
+    # )
 
 
-    # map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
-    # map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
+    map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
+    map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
 
 
     timer.lap("Map initialization")

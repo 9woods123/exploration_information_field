@@ -18,7 +18,7 @@ def generate_eifmap_GT():
     N_VIEWPOINTS = 100
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
-    GRID_STEP     = 0.3
+    GRID_STEP     = 0.5
     MAP_BOUND=10
     N_SENSOR_RAYS=32
     # -------------------------
@@ -34,15 +34,15 @@ def generate_eifmap_GT():
 
     map2d = Map2D(resolution)
 
-    map2d.init_T_corridor(
-        center=(0.0, 0.0),
-        w_vert=5.0,
-        h_vert=18.0,
-        w_horiz=14.0,
-        h_horiz=4.0,
-        wall_thickness=1,
-        bound=12.0
-    )
+    # map2d.init_T_corridor(
+    #     center=(0.0, 0.0),
+    #     w_vert=5.0,
+    #     h_vert=18.0,
+    #     w_horiz=14.0,
+    #     h_horiz=4.0,
+    #     wall_thickness=1,
+    #     bound=12.0
+    # )
 
 
     # map2d.init_rectangle_known(
@@ -60,8 +60,8 @@ def generate_eifmap_GT():
     # )
 
 
-    # map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
-    # map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
+    map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
+    map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
 
 
     timer.lap("Map initialization")
