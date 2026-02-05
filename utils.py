@@ -5,10 +5,22 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import os
 from matplotlib.lines import Line2D
+import time
 
 mpl.rcParams['pdf.fonttype'] = 42     # TrueType
 mpl.rcParams['ps.fonttype']  = 42
 
+
+
+class Timer:
+    def __init__(self):
+        self.t0 = time.perf_counter()
+
+    def lap(self, msg):
+        t1 = time.perf_counter()
+        dt_ms = (t1 - self.t0) * 1000.0
+        print(f"[TIMER] {msg:35s}: {dt_ms:8.2f} ms")
+        self.t0 = t1
 
 def circular_mean(yaws, weights):
     sin_sum = np.sum(weights * np.sin(yaws))
@@ -472,7 +484,7 @@ def plot_eif_and_sdf_with_traj(eif_table, sdf_field, map2d, traj0, traj_opt):
 
 def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
     save_dir="results",
-    fname="eif_sdf.pdf"):
+    frame="eif_sdf.pdf"):
                      
     """
     Visualize EIF field with optimal yaw, and (optionally) SDF field.
@@ -617,7 +629,7 @@ def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
     # save figure (IEEE-safe)
     # -----------------------------
 
-    save_path = os.path.join(save_dir, fname)
+    save_path = os.path.join(save_dir, frame)
     plt.savefig(save_path, bbox_inches="tight")
     print(f"[Figure saved] {save_path}")
     

@@ -3,9 +3,6 @@ from traj_generater import *
 
 
 
-
-
-
 def main():
 
     eif_table, sdf_field, map2d= map_generate()

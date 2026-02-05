@@ -4,17 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from utils import *
-import time
 
-class Timer:
-    def __init__(self):
-        self.t0 = time.perf_counter()
-
-    def lap(self, msg):
-        t1 = time.perf_counter()
-        dt_ms = (t1 - self.t0) * 1000.0
-        print(f"[TIMER] {msg:35s}: {dt_ms:8.2f} ms")
-        self.t0 = t1
 
 # ============================================================
 # Map
@@ -640,7 +630,7 @@ class EIFLookupTable:
         return g
 
 # ============================================================
-# MAIN
+#map_generate
 # ============================================================
 
 
@@ -831,13 +821,3 @@ def map_generate():
     return eif_table, sdf_field, map2d
 
 
-
-def main():
-
-    eif_table, sdf_field, map2d= map_generate()
-    plot_eif_and_sdf(eif_table, sdf_field,eif_table.Yaw,map2d ,show_sdf=True)
-
-
-
-if __name__ == "__main__":
-    main()
