@@ -259,7 +259,7 @@ class TrajOpti:
         return g 
 
 
-    def collision_grad(self, traj, eps=1.5):
+    def collision_grad(self, traj, eps=0.3):
         """
         Soft collision avoidance gradient:
         Penalize sdf < eps

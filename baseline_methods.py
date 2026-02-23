@@ -15,12 +15,12 @@ def generate_eifmap_GT():
     # Hyper-parameters
     # -------------------------
     N_INFO_PTS    = 100
-    N_VIEWPOINTS = 100
+    N_VIEWPOINTS = 25
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
-    GRID_STEP     = 0.5
+    GRID_STEP     = 0.3
     MAP_BOUND=10
-    N_SENSOR_RAYS=32
+    N_SENSOR_RAYS=12
     # -------------------------
     # Sensor & Map
     # -------------------------
@@ -59,9 +59,20 @@ def generate_eifmap_GT():
     #     seed=221221
     # )
 
+    # map2d.init_T_corridor(
+    #     center=(0.0, 0.0),
+    #     w_vert=5.0,
+    #     h_vert=18.0,
+    #     w_horiz=14.0,
+    #     h_horiz=4.0,
+    #     wall_thickness=1,
+    #     bound=12.0,
+    #     wall_mode="both")
+
 
     map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
     map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
+
 
 
     timer.lap("Map initialization")
@@ -98,15 +109,15 @@ def generate_eifmap_GT():
     # -------------------------
     # KDE continuous field
     # -------------------------
-    field = KDEField(ts, Is, h=KDE_BANDWIDTH)
+    field = GroundTruthField(ts, Is)
     grad_est = GradientEstimator(field, eps=GRAD_EPS)
     timer.lap("KDE field construction")
 
     # -------------------------
     # Build lookup table grid
     # -------------------------
-    xs = np.arange(-MAP_BOUND, MAP_BOUND, GRID_STEP)
-    ys = np.arange(-MAP_BOUND, MAP_BOUND, GRID_STEP)
+    xs = np.arange(-MAP_BOUND + 0.5*GRID_STEP, MAP_BOUND, GRID_STEP)
+    ys = np.arange(-MAP_BOUND+  0.5*GRID_STEP, MAP_BOUND, GRID_STEP)
 
     nx, ny = len(xs), len(ys)
     I_grid  = np.full((nx, ny), np.nan)

@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from utils import *
-
+from neuralEIF_model import NeuralEIFField, GaussianNeuralEIF
 
 # ============================================================
 # Map
@@ -205,16 +205,52 @@ class Map2D:
                 if abs(p[0] - c[0]) <= w/2 and abs(p[1] - c[1]) <= h/2:
                     self.grid[idx] = 1.0
     
+    def add_random_rectangular_obstacles(
+        self,
+        n_obs=4,
+        w_range=(0.5, 4),
+        h_range=(0.5, 6),
+        seed=22,
+        w_bound=3,
+        h_bound=3
+        ):
+
+            rng = np.random.default_rng(seed)
+
+            for _ in range(n_obs):
+
+                # 1️⃣ 全局 world 坐标采样
+                c = np.array([
+                    rng.uniform(-w_bound, w_bound),
+                    rng.uniform(-h_bound, h_bound)
+                ])
+
+                w = rng.uniform(*w_range)
+                h = rng.uniform(*h_range)
+
+                # 2️⃣ 遍历所有 grid（包括 unknown）
+                for idx in list(self.grid.keys()):
+
+                    p = self.grid_to_world(idx)
+
+                    if abs(p[0] - c[0]) <= w/2 and abs(p[1] - c[1]) <= h/2:
+                        self.grid[idx] = 1.0
+
+
+
+
     def init_T_corridor(
         self,
         center=(0.0, 0.0),
-        w_vert=2.0,     # 竖直走廊宽度
-        h_vert=10.0,    # 竖直走廊长度
-        w_horiz=8.0,    # 水平走廊长度
-        h_horiz=2.0,    # 水平走廊宽度
-        wall_thickness=0.6,  # 走廊两侧墙体厚度
-        bound=15.0      # 地图半尺寸（米）
+        w_vert=2.0,
+        h_vert=10.0,
+        w_horiz=8.0,
+        h_horiz=2.0,
+        wall_thickness=0.6,
+        bound=15.0,
+        wall_mode="both"   # "both", "left", "right", "none"
     ):
+
         """
         初始化一个 T 型走廊环境：
         - 走廊内部：已知自由 (0.0)
@@ -244,13 +280,31 @@ class Map2D:
             return in_vertical_corridor(p) or in_horizontal_corridor(p)
 
         def in_wall(p):
-            # 仅竖直走廊两侧生成墙
-            in_vert_wall = (
-                abs(p[0] - cx) <= w_vert * 0.5 + wall_thickness and
-                abs(p[1] - cy) <= h_vert * 0.5 and   # 注意这里没有+wall_thickness
-                not in_vertical_corridor(p)
+            # 是否在竖直走廊高度范围内
+            in_y_range = abs(p[1] - cy) <= h_vert * 0.5
+
+            # 左右墙区域
+            in_left_wall = (
+                cx - w_vert * 0.5 - wall_thickness <= p[0] < cx - w_vert * 0.5 and
+                in_y_range
             )
-            return in_vert_wall
+
+            in_right_wall = (
+                cx + w_vert * 0.5 < p[0] <= cx + w_vert * 0.5 + wall_thickness and
+                in_y_range
+            )
+
+            if wall_mode == "both":
+                return in_left_wall or in_right_wall
+            elif wall_mode == "left":
+                return in_left_wall
+            elif wall_mode == "right":
+                return in_right_wall
+            elif wall_mode == "none":
+                return False
+            else:
+                raise ValueError(f"Unknown wall_mode: {wall_mode}")
+
 
         for ix in range(-bound_cells, bound_cells):
             for iy in range(-bound_cells, bound_cells):
@@ -451,7 +505,7 @@ class InfoSampler:
         
     #     return True
 
-    def visibility_sample(self, t, n_rays, step=0.25):
+    def visibility_sample(self, t, n_rays, step=0.2):
         """
         从位置 t 发射 n_rays 条均匀分布的射线，沿每条射线探测未知区域
         t: np.array([x, y]) 当前位姿
@@ -525,7 +579,25 @@ class KDEField:
         r2 = np.sum(diff**2, axis=1)
         w = np.exp(-0.5 * r2 / (self.h**2))
         return np.sum(w * self.Is) / (np.sum(w) + 1e-6)
+    
+class GroundTruthField:
+    def __init__(self, ts, Is):
+        self.ts = np.asarray(ts)
+        self.Is = np.asarray(Is)
 
+    def eval(self, t):
+        """
+        t: (2,)
+        返回与 t 最近的采样点对应的 I
+        """
+        t = np.asarray(t)
+
+        # 找最近采样点
+        diff = self.ts - t
+        r2 = np.sum(diff**2, axis=1)
+        idx = np.argmin(r2)
+
+        return self.Is[idx]
 
 # ============================================================
 # Gradient Estimator
@@ -634,7 +706,7 @@ class EIFLookupTable:
 # ============================================================
 
 
-def map_generate():
+def map_generate(random_seed=0):
     timer = Timer()
 
     resolution = 0.2
@@ -644,10 +716,10 @@ def map_generate():
     # Hyper-parameters
     # -------------------------
     N_INFO_PTS    = 100
-    N_VIEWPOINTS = 100
+    N_VIEWPOINTS = 200
     KDE_BANDWIDTH = 0.8
     GRAD_EPS      = 0.2
-    GRID_STEP     = 0.5
+    GRID_STEP     = 0.2
     MAP_BOUND=10
     N_SENSOR_RAYS=12
     # -------------------------
@@ -663,34 +735,44 @@ def map_generate():
 
     map2d = Map2D(resolution)
 
-    # map2d.init_T_corridor(
-    #     center=(0.0, 0.0),
-    #     w_vert=5.0,
-    #     h_vert=18.0,
-    #     w_horiz=14.0,
-    #     h_horiz=4.0,
-    #     wall_thickness=1,
-    #     bound=12.0
-    # )
+
+    map2d.init_T_corridor(
+        center=(0.0, 0.0),
+        w_vert=5.0,
+        h_vert=18.0,
+        w_horiz=14.0,
+        h_horiz=4.0,
+        wall_thickness=1,
+        bound=12.0,
+        wall_mode="both")
+    
+    map2d.add_random_rectangular_obstacles(
+        n_obs=4,
+        w_range=(0.5, 1),
+        h_range=(0.7, 1.1),
+        seed=random_seed,
+        w_bound=2,
+        h_bound=4
+    )
 
 
     # map2d.init_rectangle_known(
     #     center=(0.0, 0.0),
-    #     width=10.0,
+    #     width=12.0,
     #     height=15.0,
     #     bound=MAP_BOUND
     # )
 
     # map2d.add_random_rectangular_obstacles(
-    #     n_obs=8,
-    #     w_range=(0.5, 4),
-    #     h_range=(0.5, 4),
-    #     seed=221221
+    #     n_obs=5,
+    #     w_range=(0.7, 1.5),
+    #     h_range=(0.7, 1.5),
+    #     seed=random_seed
     # )
 
 
-    map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
-    map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
+    # map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
+    # map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
 
 
     timer.lap("Map initialization")
@@ -727,14 +809,17 @@ def map_generate():
     # KDE continuous field
     # -------------------------
     field = KDEField(ts, Is, h=KDE_BANDWIDTH)
+    # field = GroundTruthField(ts, Is)
+
+
     grad_est = GradientEstimator(field, eps=GRAD_EPS)
     timer.lap("KDE field construction")
 
     # -------------------------
     # Build lookup table grid
     # -------------------------
-    xs = np.arange(-MAP_BOUND, MAP_BOUND, GRID_STEP)
-    ys = np.arange(-MAP_BOUND, MAP_BOUND, GRID_STEP)
+    xs = np.arange(-MAP_BOUND + 0.5*GRID_STEP, MAP_BOUND, GRID_STEP)
+    ys = np.arange(-MAP_BOUND+  0.5*GRID_STEP, MAP_BOUND, GRID_STEP)
 
     nx, ny = len(xs), len(ys)
     I_grid  = np.full((nx, ny), np.nan)
@@ -786,7 +871,194 @@ def map_generate():
     # -------------------------
 
 
+    Yaw_grid_2d = np.zeros((nx, ny))
+    for ix, x in enumerate(xs):
+        for iy, y in enumerate(ys):
 
+            t = np.array([x, y])
+
+            if not map2d.is_free(t):
+                Yaw_grid_2d[ix, iy] = np.nan
+                continue
+
+            # -------- 找附近 viewpoints --------
+            dists = np.linalg.norm(ts - t, axis=1)
+            k = 5
+            idx = np.argsort(dists)[:k]
+
+            w = np.exp(-dists[idx]**2 / (2 * KDE_BANDWIDTH**2))
+            yaws = Yaw_grid[idx]
+
+            Yaw_grid_2d[ix, iy] = circular_mean(yaws, w)
+
+
+
+
+    eif_table = EIFLookupTable(xs, ys, I_grid, Gx_grid, Gy_grid, Yaw_grid_2d)
+
+    timer.lap("EIF table creation")
+
+
+
+    return eif_table, sdf_field, map2d
+
+
+
+
+### using neural EIF to predict  
+def map_generate_neuralEIF(random_seed=0):
+    timer = Timer()
+
+    resolution = 0.2
+    H_thresh = 0.65 * np.log(2)
+
+    # -------------------------
+    # Hyper-parameters
+    # -------------------------
+    N_INFO_PTS    = 100
+    N_VIEWPOINTS = 75
+    KDE_BANDWIDTH = 0.8
+    GRAD_EPS      = 0.2
+    GRID_STEP     = 0.3
+    MAP_BOUND=10
+    N_SENSOR_RAYS=12
+    # -------------------------
+    # Sensor & Map
+    # -------------------------
+    sensor = SensorModel(
+        alpha=np.pi/2,
+        kf=10.0,
+        kr=4.0,
+        dmax=3.0
+    )
+
+
+    map2d = Map2D(resolution)
+
+
+    # map2d.init_T_corridor(
+    #     center=(0.0, 0.0),
+    #     w_vert=5.0,
+    #     h_vert=18.0,
+    #     w_horiz=14.0,
+    #     h_horiz=4.0,
+    #     wall_thickness=1,
+    #     bound=12.0,
+    #     wall_mode="right")
+
+
+    # map2d.init_rectangle_known(
+    #     center=(0.0, 0.0),
+    #     width=12.0,
+    #     height=15.0,
+    #     bound=MAP_BOUND
+    # )
+
+    # map2d.add_random_rectangular_obstacles(
+    #     n_obs=5,
+    #     w_range=(0.7, 1.5),
+    #     h_range=(0.7, 1.5),
+    #     seed=random_seed
+    # )
+
+
+    map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)
+    map2d.add_continuous_unknown(centers=[(0,5),(4,-3.0)], radius=2)
+
+
+    timer.lap("Map initialization")
+
+    sampler   = InfoSampler(map2d, sensor, H_thresh)
+    evaluator = EIFEvaluator(sensor)
+
+    # -------------------------
+    # Sample candidate viewpoints
+    # -------------------------
+    sel = np.random.choice(len(map2d.known), N_VIEWPOINTS, replace=False)
+    ts = np.array([map2d.grid_to_world(map2d.known[i]) for i in sel])
+    timer.lap("Viewpoint sampling")
+
+    # -------------------------
+    # EIF evaluation (MOST IMPORTANT)
+    # -------------------------
+
+
+    Yaw_grid= []
+    Is = []
+    for t in ts:
+        pts, w = sampler.visibility_sample(t, N_SENSOR_RAYS)
+        yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
+        Is.append(I_star)
+        Yaw_grid.append(yaw_star)
+
+    Is = np.array(Is)
+    Yaw_grid= np.array(Yaw_grid)
+
+    timer.lap("EIF evaluation @ viewpoints")
+
+    # -------------------------
+    # KDE continuous field
+    # -------------------------
+    field = NeuralEIFField(hidden_dim=512, num_layers=12, num_freqs=512)
+    # field = GaussianNeuralEIF(K=100)
+
+    field.fit(ts, Is, epochs=1000, lr=1e-3)
+    timer.lap("Neural field construction")
+
+    # -------------------------
+    # Build lookup table grid
+    # -------------------------
+    xs = np.arange(-MAP_BOUND, MAP_BOUND, GRID_STEP)
+    ys = np.arange(-MAP_BOUND, MAP_BOUND, GRID_STEP)
+
+    nx, ny = len(xs), len(ys)
+    I_grid  = np.full((nx, ny), np.nan)
+    Gx_grid = np.zeros((nx, ny))
+    Gy_grid = np.zeros((nx, ny))
+
+    for ix, x in enumerate(xs):
+        for iy, y in enumerate(ys):
+
+            t = np.array([x, y])
+
+            # ---- ONLY free space ----
+            if not map2d.is_free(t):
+                I_grid[ix, iy]  = np.nan
+                Gx_grid[ix, iy] = 0.0
+                Gy_grid[ix, iy] = 0.0
+                continue
+
+            I_grid[ix, iy] = field.query(t)
+            g = field.grad(t)
+
+            Gx_grid[ix, iy] = g[0]
+            Gy_grid[ix, iy] = g[1]
+
+    timer.lap("Lookup table build (I + grad)")
+
+
+    # -------------------------
+    # Build SDF
+    # -------------------------
+    sdf_timer = Timer()
+
+    sdf_field = SDF2D(
+        map2d,
+        xs,
+        ys,
+        resolution=resolution
+    )
+
+    sdf_field.build()
+    sdf_timer.lap("SDF build")
+
+    sdf_t_test = np.array([4, 5])
+    print("sdf_field():",sdf_field.query(sdf_t_test))
+    print("sdf_field()grad:",sdf_field.grad(sdf_t_test))
+
+    # -------------------------
+    # EIF lookup table
+    # -------------------------
 
 
     Yaw_grid_2d = np.zeros((nx, ny))
