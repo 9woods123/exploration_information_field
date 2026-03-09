@@ -543,11 +543,14 @@ def plot_eif_and_sdf(eif_table, sdf_field, Yaw_grid_2d, map2d, show_sdf=True,
         )
 
     # EIF contour
+
     c1 = ax.contourf(
         X, Y, I_grid,
         levels=30,
         cmap='viridis'
     )
+
+
     cbar1 = fig.colorbar(c1, ax=ax, shrink=0.8)
     cbar1.set_label("Expected Information Gain")
 

@@ -461,50 +461,6 @@ class InfoSampler:
             w.append(H)
         return np.array(pts), np.array(w)
 
-
-    # def visibility_sample(self, t, n):
-
-
-    #     pts, w = [], []
-
-    #     for _ in range(n):
-    #         # sample in polar coordinates (sensor range)
-    #         r = self.sensor.dmax * np.sqrt(np.random.rand())
-    #         th = 2 * np.pi * np.random.rand()
-    #         p = t + np.array([r*np.cos(th), r*np.sin(th)])
-
-
-    #         # ray casting: check visibility
-    #         if not self._is_visible(t, p):
-    #             continue
-
-    #         H = self.map.entropy_at(p)
-            
-    #         if H < self.H_thresh:
-    #             continue
-
-    #         pts.append(p)
-    #         w.append(H)
-
-
-    #     return np.array(pts), np.array(w)
-    # def _is_visible(self, p0, p1, step=0.1):
-    #     direction = p1 - p0
-    #     dist = np.linalg.norm(direction)
-    #     direction /= dist
-
-    #     s = 0.0
-    #     s+=step
-    #     while s < dist:
-    #         p = p0 + s * direction
-
-    #         if self.map.is_occupied(p):
-    #             return False
-
-    #         s += step
-        
-    #     return True
-
     def visibility_sample(self, t, n_rays, step=0.2):
         """
         从位置 t 发射 n_rays 条均匀分布的射线，沿每条射线探测未知区域
@@ -563,7 +519,32 @@ class EIFEvaluator:
         yaw = np.arctan2(d[1], d[0])
         I = self.I(t, yaw, pts, w)
         return yaw, I
+    
+    def optimal_yaw_bruteforce(self, t, pts, w, num_dirs=36):
+        """
+        Search best yaw by evaluating information gain on evenly spaced directions.
+        
+        Args:
+            t: robot position (2D)
+            pts: voxel positions
+            w: voxel entropy weights
+            num_dirs: number of yaw samples (default 36)
 
+        Returns:
+            best_yaw, best_I
+        """
+        best_yaw = 0.0
+        best_I = 0.005
+
+        yaws = np.linspace(-np.pi, np.pi, num_dirs, endpoint=False)
+
+        for yaw in yaws:
+            I = self.I(t, yaw, pts, w)
+            if I > best_I:
+                best_I = I
+                best_yaw = yaw
+
+        return best_yaw, best_I
 
 # ============================================================
 # KDE Continuous Field
@@ -736,39 +717,41 @@ def map_generate(random_seed=0):
     map2d = Map2D(resolution)
 
 
-    map2d.init_T_corridor(
-        center=(0.0, 0.0),
-        w_vert=5.0,
-        h_vert=18.0,
-        w_horiz=14.0,
-        h_horiz=4.0,
-        wall_thickness=1,
-        bound=12.0,
-        wall_mode="both")
+    # map2d.init_T_corridor(
+    #     center=(0.0, 0.0),
+    #     w_vert=5.0,
+    #     h_vert=18.0,
+    #     w_horiz=14.0,
+    #     h_horiz=4.0,
+    #     wall_thickness=1,
+    #     bound=12.0,
+    #     wall_mode="both")
     
-    map2d.add_random_rectangular_obstacles(
-        n_obs=4,
-        w_range=(0.5, 1),
-        h_range=(0.7, 1.1),
-        seed=random_seed,
-        w_bound=2,
-        h_bound=4
+    # map2d.add_random_rectangular_obstacles(
+    #     n_obs=4,
+    #     w_range=(0.5, 1),
+    #     h_range=(0.7, 1.1),
+    #     seed=random_seed,
+    #     w_bound=2,
+    #     h_bound=4
+    # )
+
+
+    map2d.init_rectangle_known(
+        center=(0.0, 0.0),
+        width=12.0,
+        height=15.0,
+        bound=MAP_BOUND
     )
 
-
-    # map2d.init_rectangle_known(
-    #     center=(0.0, 0.0),
-    #     width=12.0,
-    #     height=15.0,
-    #     bound=MAP_BOUND
-    # )
-
-    # map2d.add_random_rectangular_obstacles(
-    #     n_obs=5,
-    #     w_range=(0.7, 1.5),
-    #     h_range=(0.7, 1.5),
-    #     seed=random_seed
-    # )
+    map2d.add_random_rectangular_obstacles(
+        n_obs=12,
+        w_range=(0.4, 0.7),
+        h_range=(0.4, 0.7),
+        seed=random_seed,
+        w_bound=3,
+        h_bound=6
+    )
 
 
     # map2d.init_dense_maze(K=4, cell_size=3.0, wall_thickness=0.5, seed=5)

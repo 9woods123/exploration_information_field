@@ -97,9 +97,11 @@ def generate_eifmap_GT():
     Is = []
     for t in ts:
         pts, w = sampler.visibility_sample(t, N_SENSOR_RAYS)
-        yaw_star, I_star = evaluator.optimal_yaw_fast(t, pts, w)
-        Is.append(I_star)
-        Yaw_grid.append(yaw_star)
+        yaw_star_fast, I_star_fast = evaluator.optimal_yaw_fast(t, pts, w)
+        yaw_star_gt, I_star_gt = evaluator.optimal_yaw_bruteforce(t, pts, w)
+
+        Is.append(I_star_gt)
+        Yaw_grid.append(yaw_star_gt)
 
     Is = np.array(Is)
     Yaw_grid= np.array(Yaw_grid)
