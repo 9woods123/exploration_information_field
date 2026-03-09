@@ -473,14 +473,6 @@ def main():
     alpha=0.25
     )
 
-    plt.plot(viewpoints_list, mean_t, label="T-Corridor Max")
-    plt.fill_between(
-    viewpoints_list,
-    max_t - std_max_t,
-    max_t + std_max_t,
-    alpha=0.25
-    )
-
 
     # ---- Maze ----
     plt.plot(viewpoints_list, mean_maze, label="Maze Mean")
@@ -491,14 +483,7 @@ def main():
     alpha=0.25
     )
 
-    # ---- Maze ----
-    plt.plot(viewpoints_list, mean_maze, label="Maze Max")
-    plt.fill_between(
-    viewpoints_list,
-    max_maze - std_max_maze,
-    max_maze + std_max_maze,
-    alpha=0.25
-    )
+
 
     plt.xlabel("Number of Viewpoints")
     plt.ylabel("MSE to GT")
