@@ -36,6 +36,7 @@ def main():
     start = np.array([1, -8.5])
     mid  = np.array([ 0.35, 3])
     goal  = np.array([ -6.0,  7.5])
+    
     # traj0 = path_planner.init_straight_traj(start, goal)
     traj0 = path_planner.init_polyline_traj(start, mid , goal)
 

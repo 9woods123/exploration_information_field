@@ -439,6 +439,7 @@ def build_dense_maze(map2d):
         radius=2
     )
 
+
 def main():
 
     viewpoints_list = [
